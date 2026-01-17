@@ -27,11 +27,11 @@ Homepage = "https://github.com/major/octodns-porkbun"
 Repository = "https://github.com/major/octodns-porkbun"
 
 [build-system]
-requires = ["hatchling>=1.27"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.7.19"]
+build-backend = "uv_build"
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/octodns_porkbun"]
+[tool.uv.build-backend]
+module-name = "octodns_porkbun"
 
 [dependency-groups]
 dev = [
