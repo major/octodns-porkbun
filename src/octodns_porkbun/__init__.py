@@ -147,148 +147,143 @@ class PorkbunProvider(BaseProvider):
     def _data_for(self, record_type: str, records: list[DNSRecordResponse]) -> dict[str, Any]:
         """Convert Porkbun API records to octoDNS data format."""
         ttl = records[0].ttl
+        handlers: dict[str, Any] = {
+            "A": self._data_for_simple,
+            "AAAA": self._data_for_simple,
+            "NS": self._data_for_simple,
+            "TXT": self._data_for_simple,
+            "CNAME": self._data_for_single,
+            "ALIAS": self._data_for_single,
+            "MX": self._data_for_mx,
+            "SRV": self._data_for_srv,
+            "CAA": self._data_for_caa,
+            "SSHFP": self._data_for_sshfp,
+            "TLSA": self._data_for_tlsa,
+            "HTTPS": self._data_for_svcb,
+            "SVCB": self._data_for_svcb,
+        }
+        handler = handlers.get(record_type, self._data_for_simple)
+        return handler(record_type, ttl, records)
 
-        if record_type in ("A", "AAAA", "NS"):
-            return {
-                "type": record_type,
-                "ttl": ttl,
-                "values": [r.content for r in records],
-            }
-
-        if record_type == "TXT":
-            return {
-                "type": record_type,
-                "ttl": ttl,
-                "values": [r.content for r in records],
-            }
-
-        if record_type in ("CNAME", "ALIAS"):
-            content = records[0].content
-            if not content.endswith("."):
-                content = f"{content}."
-            return {
-                "type": record_type,
-                "ttl": ttl,
-                "value": content,
-            }
-
-        if record_type == "MX":
-            values = []
-            for r in records:
-                exchange = r.content
-                if not exchange.endswith("."):
-                    exchange = f"{exchange}."
-                values.append({"preference": r.priority, "exchange": exchange})
-            return {
-                "type": record_type,
-                "ttl": ttl,
-                "values": values,
-            }
-
-        if record_type == "SRV":
-            values = []
-            for r in records:
-                parts = r.content.split()
-                if len(parts) >= 3:
-                    target = parts[2]
-                    if not target.endswith("."):
-                        target = f"{target}."
-                    values.append(
-                        {
-                            "priority": r.priority,
-                            "weight": int(parts[0]),
-                            "port": int(parts[1]),
-                            "target": target,
-                        }
-                    )
-            return {
-                "type": record_type,
-                "ttl": ttl,
-                "values": values,
-            }
-
-        if record_type == "CAA":
-            values = []
-            for r in records:
-                parts = r.content.split(None, 2)
-                if len(parts) >= 3:
-                    value = parts[2].strip('"')
-                    values.append(
-                        {
-                            "flags": int(parts[0]),
-                            "tag": parts[1],
-                            "value": value,
-                        }
-                    )
-            return {
-                "type": record_type,
-                "ttl": ttl,
-                "values": values,
-            }
-
-        if record_type == "SSHFP":
-            values = []
-            for r in records:
-                parts = r.content.split()
-                if len(parts) >= 3:
-                    values.append(
-                        {
-                            "algorithm": int(parts[0]),
-                            "fingerprint_type": int(parts[1]),
-                            "fingerprint": parts[2],
-                        }
-                    )
-            return {
-                "type": record_type,
-                "ttl": ttl,
-                "values": values,
-            }
-
-        if record_type == "TLSA":
-            values = []
-            for r in records:
-                parts = r.content.split()
-                if len(parts) >= 4:
-                    values.append(
-                        {
-                            "certificate_usage": int(parts[0]),
-                            "selector": int(parts[1]),
-                            "matching_type": int(parts[2]),
-                            "certificate_association_data": parts[3],
-                        }
-                    )
-            return {
-                "type": record_type,
-                "ttl": ttl,
-                "values": values,
-            }
-
-        if record_type in ("HTTPS", "SVCB"):
-            values = []
-            for r in records:
-                parts = r.content.split(None, 1)
-                if len(parts) >= 1:
-                    target = parts[0]
-                    if not target.endswith("."):
-                        target = f"{target}."
-                    value: dict[str, Any] = {
-                        "priority": r.priority,
-                        "target": target,
-                    }
-                    if len(parts) > 1:
-                        value["params"] = parts[1]
-                    values.append(value)
-            return {
-                "type": record_type,
-                "ttl": ttl,
-                "values": values,
-            }
-
+    def _data_for_simple(
+        self, record_type: str, ttl: int, records: list[DNSRecordResponse]
+    ) -> dict[str, Any]:
+        """Handle simple multi-value record types (A, AAAA, NS, TXT)."""
         return {
             "type": record_type,
             "ttl": ttl,
             "values": [r.content for r in records],
         }
+
+    def _data_for_single(
+        self, record_type: str, ttl: int, records: list[DNSRecordResponse]
+    ) -> dict[str, Any]:
+        """Handle single-value record types with trailing dot (CNAME, ALIAS)."""
+        content = records[0].content
+        if not content.endswith("."):
+            content = f"{content}."
+        return {
+            "type": record_type,
+            "ttl": ttl,
+            "value": content,
+        }
+
+    def _data_for_mx(
+        self, record_type: str, ttl: int, records: list[DNSRecordResponse]
+    ) -> dict[str, Any]:
+        """Handle MX records."""
+        values = []
+        for r in records:
+            exchange = r.content
+            if not exchange.endswith("."):
+                exchange = f"{exchange}."
+            values.append({"preference": r.priority, "exchange": exchange})
+        return {"type": record_type, "ttl": ttl, "values": values}
+
+    def _data_for_srv(
+        self, record_type: str, ttl: int, records: list[DNSRecordResponse]
+    ) -> dict[str, Any]:
+        """Handle SRV records."""
+        values = []
+        for r in records:
+            parts = r.content.split()
+            if len(parts) >= 3:
+                target = parts[2]
+                if not target.endswith("."):
+                    target = f"{target}."
+                values.append(
+                    {
+                        "priority": r.priority,
+                        "weight": int(parts[0]),
+                        "port": int(parts[1]),
+                        "target": target,
+                    }
+                )
+        return {"type": record_type, "ttl": ttl, "values": values}
+
+    def _data_for_caa(
+        self, record_type: str, ttl: int, records: list[DNSRecordResponse]
+    ) -> dict[str, Any]:
+        """Handle CAA records."""
+        values = []
+        for r in records:
+            parts = r.content.split(None, 2)
+            if len(parts) >= 3:
+                value = parts[2].strip('"')
+                values.append({"flags": int(parts[0]), "tag": parts[1], "value": value})
+        return {"type": record_type, "ttl": ttl, "values": values}
+
+    def _data_for_sshfp(
+        self, record_type: str, ttl: int, records: list[DNSRecordResponse]
+    ) -> dict[str, Any]:
+        """Handle SSHFP records."""
+        values = []
+        for r in records:
+            parts = r.content.split()
+            if len(parts) >= 3:
+                values.append(
+                    {
+                        "algorithm": int(parts[0]),
+                        "fingerprint_type": int(parts[1]),
+                        "fingerprint": parts[2],
+                    }
+                )
+        return {"type": record_type, "ttl": ttl, "values": values}
+
+    def _data_for_tlsa(
+        self, record_type: str, ttl: int, records: list[DNSRecordResponse]
+    ) -> dict[str, Any]:
+        """Handle TLSA records."""
+        values = []
+        for r in records:
+            parts = r.content.split()
+            if len(parts) >= 4:
+                values.append(
+                    {
+                        "certificate_usage": int(parts[0]),
+                        "selector": int(parts[1]),
+                        "matching_type": int(parts[2]),
+                        "certificate_association_data": parts[3],
+                    }
+                )
+        return {"type": record_type, "ttl": ttl, "values": values}
+
+    def _data_for_svcb(
+        self, record_type: str, ttl: int, records: list[DNSRecordResponse]
+    ) -> dict[str, Any]:
+        """Handle HTTPS/SVCB records."""
+        values = []
+        for r in records:
+            parts = r.content.split(None, 1)
+            if len(parts) >= 1:
+                target = parts[0]
+                if not target.endswith("."):
+                    target = f"{target}."
+                value: dict[str, Any] = {"priority": r.priority, "target": target}
+                if len(parts) > 1:
+                    value["params"] = parts[1]
+                values.append(value)
+        return {"type": record_type, "ttl": ttl, "values": values}
 
     def _apply(self, plan: Plan) -> None:
         """Apply changes to Porkbun."""
@@ -335,73 +330,97 @@ class PorkbunProvider(BaseProvider):
         ttl = record.ttl
         record_type = record._type
 
-        records: list[DNSRecord] = []
+        generators: dict[str, Any] = {
+            "A": self._gen_simple,
+            "AAAA": self._gen_simple,
+            "NS": self._gen_simple,
+            "TXT": self._gen_simple,
+            "CNAME": self._gen_single,
+            "ALIAS": self._gen_single,
+            "MX": self._gen_mx,
+            "SRV": self._gen_srv,
+            "CAA": self._gen_caa,
+            "SSHFP": self._gen_sshfp,
+            "TLSA": self._gen_tlsa,
+            "HTTPS": self._gen_svcb,
+            "SVCB": self._gen_svcb,
+        }
+        generator = generators.get(record_type)
+        if generator:
+            return generator(record, subdomain, ttl)
+        return []
 
-        if record_type in ("A", "AAAA", "NS", "TXT"):
-            for value in record.values:
-                content = value.rstrip(".") if record_type == "NS" else value
-                records.append(create_record(record_type, content, name=subdomain, ttl=ttl))
+    def _gen_simple(self, record: Any, subdomain: str | None, ttl: int) -> list[DNSRecord]:
+        """Generate simple multi-value records (A, AAAA, NS, TXT)."""
+        record_type = record._type
+        result: list[DNSRecord] = []
+        for value in record.values:
+            content = value.rstrip(".") if record_type == "NS" else value
+            result.append(create_record(record_type, content, name=subdomain, ttl=ttl))
+        return result
 
-        elif record_type in ("CNAME", "ALIAS"):
-            content = record.value.rstrip(".")
-            records.append(create_record(record_type, content, name=subdomain, ttl=ttl))
+    def _gen_single(self, record: Any, subdomain: str | None, ttl: int) -> list[DNSRecord]:
+        """Generate single-value records (CNAME, ALIAS)."""
+        content = record.value.rstrip(".")
+        return [create_record(record._type, content, name=subdomain, ttl=ttl)]
 
-        elif record_type == "MX":
-            for value in record.values:
-                exchange = value.exchange.rstrip(".")
-                records.append(
-                    MXRecord(
-                        content=exchange,
-                        priority=value.preference,
-                        name=subdomain,
-                        ttl=ttl,
-                    )
-                )
+    def _gen_mx(self, record: Any, subdomain: str | None, ttl: int) -> list[DNSRecord]:
+        """Generate MX records."""
+        result: list[DNSRecord] = []
+        for value in record.values:
+            exchange = value.exchange.rstrip(".")
+            result.append(
+                MXRecord(content=exchange, priority=value.preference, name=subdomain, ttl=ttl)
+            )
+        return result
 
-        elif record_type == "SRV":
-            for value in record.values:
-                target = value.target.rstrip(".")
-                content = f"{value.weight} {value.port} {target}"
-                records.append(
-                    SRVRecord(
-                        content=content,
-                        priority=value.priority,
-                        name=subdomain,
-                        ttl=ttl,
-                    )
-                )
+    def _gen_srv(self, record: Any, subdomain: str | None, ttl: int) -> list[DNSRecord]:
+        """Generate SRV records."""
+        result: list[DNSRecord] = []
+        for value in record.values:
+            target = value.target.rstrip(".")
+            content = f"{value.weight} {value.port} {target}"
+            result.append(
+                SRVRecord(content=content, priority=value.priority, name=subdomain, ttl=ttl)
+            )
+        return result
 
-        elif record_type == "CAA":
-            for value in record.values:
-                content = f'{value.flags} {value.tag} "{value.value}"'
-                records.append(CAARecord(content=content, name=subdomain, ttl=ttl))
+    def _gen_caa(self, record: Any, subdomain: str | None, ttl: int) -> list[DNSRecord]:
+        """Generate CAA records."""
+        result: list[DNSRecord] = []
+        for value in record.values:
+            content = f'{value.flags} {value.tag} "{value.value}"'
+            result.append(CAARecord(content=content, name=subdomain, ttl=ttl))
+        return result
 
-        elif record_type == "SSHFP":
-            for value in record.values:
-                content = f"{value.algorithm} {value.fingerprint_type} {value.fingerprint}"
-                records.append(SSHFPRecord(content=content, name=subdomain, ttl=ttl))
+    def _gen_sshfp(self, record: Any, subdomain: str | None, ttl: int) -> list[DNSRecord]:
+        """Generate SSHFP records."""
+        result: list[DNSRecord] = []
+        for value in record.values:
+            content = f"{value.algorithm} {value.fingerprint_type} {value.fingerprint}"
+            result.append(SSHFPRecord(content=content, name=subdomain, ttl=ttl))
+        return result
 
-        elif record_type == "TLSA":
-            for value in record.values:
-                content = (
-                    f"{value.certificate_usage} {value.selector} "
-                    f"{value.matching_type} {value.certificate_association_data}"
-                )
-                records.append(TLSARecord(content=content, name=subdomain, ttl=ttl))
+    def _gen_tlsa(self, record: Any, subdomain: str | None, ttl: int) -> list[DNSRecord]:
+        """Generate TLSA records."""
+        result: list[DNSRecord] = []
+        for value in record.values:
+            content = (
+                f"{value.certificate_usage} {value.selector} "
+                f"{value.matching_type} {value.certificate_association_data}"
+            )
+            result.append(TLSARecord(content=content, name=subdomain, ttl=ttl))
+        return result
 
-        elif record_type in ("HTTPS", "SVCB"):
-            record_cls = HTTPSRecord if record_type == "HTTPS" else SVCBRecord
-            for value in record.values:
-                target = value.target.rstrip(".")
-                params = getattr(value, "params", "")
-                content = f"{target} {params}".strip() if params else target
-                records.append(
-                    record_cls(
-                        content=content,
-                        priority=value.priority,
-                        name=subdomain,
-                        ttl=ttl,
-                    )
-                )
-
-        return records
+    def _gen_svcb(self, record: Any, subdomain: str | None, ttl: int) -> list[DNSRecord]:
+        """Generate HTTPS/SVCB records."""
+        record_cls = HTTPSRecord if record._type == "HTTPS" else SVCBRecord
+        result: list[DNSRecord] = []
+        for value in record.values:
+            target = value.target.rstrip(".")
+            params = getattr(value, "params", "")
+            content = f"{target} {params}".strip() if params else target
+            result.append(
+                record_cls(content=content, priority=value.priority, name=subdomain, ttl=ttl)
+            )
+        return result

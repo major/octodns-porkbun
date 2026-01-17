@@ -1,4 +1,4 @@
-.PHONY: all lint format format-check typecheck test test-cov check fix clean
+.PHONY: all lint format format-check typecheck complexity test test-cov check fix clean
 
 all: check
 
@@ -14,13 +14,16 @@ format-check:
 typecheck:
 	uv run ty check
 
+complexity:
+	uv run radon cc src/ -s -a --total-average -nb
+
 test:
 	uv run pytest
 
 test-cov:
 	uv run pytest --cov-report=html
 
-check: lint format-check typecheck test
+check: lint format-check typecheck complexity test
 
 fix:
 	uv run ruff check --fix .
