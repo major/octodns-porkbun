@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from logging import getLogger
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from octodns.provider.base import BaseProvider
 from octodns.record import Record
@@ -27,13 +27,6 @@ if TYPE_CHECKING:
 
 __version__ = "0.0.1"
 __all__ = ["PorkbunProvider"]
-
-RecordType = Literal[
-    "A", "AAAA", "ALIAS", "CAA", "CNAME", "HTTPS", "MX", "NS", "SRV", "SSHFP", "SVCB", "TLSA", "TXT"
-]
-
-SINGLE_VALUE_TYPES: frozenset[str] = frozenset({"CNAME", "ALIAS"})
-PRIORITY_TYPES: frozenset[str] = frozenset({"MX", "SRV", "HTTPS", "SVCB"})
 
 
 def _ensure_trailing_dot(value: str) -> str:
