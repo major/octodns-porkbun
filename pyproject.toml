@@ -1,6 +1,6 @@
 [project]
 name = "octodns-porkbun"
-version = "0.0.1"
+version = "0.1.0"
 description = "Porkbun DNS provider for octoDNS"
 readme = "README.md"
 license = "MIT"
